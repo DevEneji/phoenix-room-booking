@@ -1,0 +1,12 @@
+Booking ID: 4
+Room: Double - $150.00
+Check-in: 2025-09-09
+Check-out: 2025-09-12
+Total: 450.00
+
+---- Payment Details ----
+Bank Name: Ameile telle
+Card Type: AMEX
+Currency: USD
+Card Number: 4738462830209
+Expiry Date: 09/2027

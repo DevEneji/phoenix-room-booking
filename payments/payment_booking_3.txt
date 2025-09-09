@@ -1,0 +1,12 @@
+Booking ID: 3
+Room: Double - $150.00
+Check-in: 2025-09-09
+Check-out: 2025-09-11
+Total: 300.00
+
+---- Payment Details ----
+Bank Name: fidelity
+Card Type: Visa
+Currency: NGN
+Card Number: 884850308093843
+Expiry Date: 09/2025

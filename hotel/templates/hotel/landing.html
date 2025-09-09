@@ -1,0 +1,79 @@
+<!-- hotel/templates/hotel/landing.html-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phoenix Hotel</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)),
+                        url('https://images.unsplash.com/photo-1566073771259-6a8506099945') no-repeat center center/cover;
+            color: white;
+            text-align: center;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 0 20px; /* some breathing room on small screens */
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.7);
+        }
+
+        a {
+            display: inline-block;
+            margin: 10px;
+            padding: 12px 25px;
+            font-size: 1.1rem;
+            text-decoration: none;
+            color: white;
+            background-color: #b8860b;
+            border-radius: 25px;
+            transition: background 0.3s ease, transform 0.2s ease;
+        }
+
+        a:hover {
+            background-color: #daa520;
+            transform: scale(1.05);
+        }
+
+        /* 📱 Mobile responsiveness */
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2.2rem;
+            }
+            a {
+                display: block;
+                width: 80%;
+                margin: 10px auto;
+                font-size: 1rem;
+                padding: 14px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            h1 {
+                font-size: 1.8rem;
+            }
+            a {
+                width: 100%;
+                font-size: 0.95rem;
+                padding: 12px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Welcome to Phoenix Hotel</h1>
+    <a href="/rooms">See Available Rooms</a>
+    <a href="/book/">Book a Room</a>
+</body>
+</html>
