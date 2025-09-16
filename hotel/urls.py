@@ -1,5 +1,6 @@
 # phoenix_hotel/urls.py
 from django.contrib import admin
+from django.http import JsonResponse
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from hotel.views import RoomViewSet, BookingViewSet, PaymentViewSet
@@ -20,7 +21,12 @@ schema_view = get_schema_view(
     permission_classes=(permissions.AllowAny,),
 )
 
+def root_view(request):
+    return JsonResponse({"message": "Welcome to the Phoenix Hotel API. Visit /api/ for endpoints."})
+
 urlpatterns = [
+    path('', root_view),
+
     path('admin/', admin.site.urls),
 
     # All API routes live under /api/
