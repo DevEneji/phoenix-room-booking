@@ -1,24 +1,32 @@
-# -------------
-# Routes for frontend (basic pages) and backend (API endpoints).
-# -------------
-
+# phoenix_hotel/urls.py
+from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import landing_page, room_list, book_room, payment_success_view, payment_view, RoomViewSet, BookingViewSet, PaymentViewSet
+from hotel.views import RoomViewSet, BookingViewSet, PaymentViewSet
 
-# DRF router for API endpoints
+# Optional: swagger (if you installed drf-yasg)
+from rest_framework import permissions
+from drf_yasg.views import get_schema_view
+from drf_yasg import openapi
+
 router = DefaultRouter()
-router.register(r'rooms', RoomViewSet)
-router.register(r'bookings', BookingViewSet)
-router.register(r'payments', PaymentViewSet)
+router.register(r'rooms', RoomViewSet, basename='room')
+router.register(r'bookings', BookingViewSet, basename='booking')
+router.register(r'payments', PaymentViewSet, basename='payment')
+
+schema_view = get_schema_view(
+    openapi.Info(title="Phoenix Hotel API", default_version='v1'),
+    public=True,
+    permission_classes=(permissions.AllowAny,),
+)
 
 urlpatterns = [
-    # Frontend pages
-    path('', landing_page, name = 'landing_page'),
-    path('rooms/', room_list, name = 'room_list'),
-    path('book/', book_room, name = 'book_room'),
-    path('payment/<int:booking_id>/', payment_view, name='payment'),
-    path('payment_success/<int:booking_id>/', payment_success_view, name='payment_success'),
-    # API endpoints
+    path('admin/', admin.site.urls),
+
+    # All API routes live under /api/
     path('api/', include(router.urls)),
+
+    # Optional documentation endpoints
+    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 ]

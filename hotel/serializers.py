@@ -16,4 +16,11 @@ class BookingSerializer(serializers.ModelSerializer):
 class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
-        fields = '__all__'
+        fields = ['id','booking','amount','is_paid','payment_date']
+        read_only_fields = ['paid_at','created_at']
+
+    def validate(self, data):
+        booking = data.get('booking')
+        if booking and booking.status == booking.BookingStatus.CANCELLED:
+            raise serializers.ValidationError("Cannot pay for a cancelled booking.")
+        return data

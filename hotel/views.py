@@ -3,9 +3,10 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.conf import settings
 import os
-from rest_framework import viewsets, filters
+from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.decorators import api_view
 from .forms import BookingForm
 from .models import Room, Booking, Payment
 from .serializers import RoomSerializer, BookingSerializer, PaymentSerializer
@@ -13,7 +14,7 @@ from .serializers import RoomSerializer, BookingSerializer, PaymentSerializer
 # --------------------
 # FRONTEND VIEWS (basic HTML templates)
 # --------------------
-
+"""
 def landing_page(request):
     # A simple landing page
     return render(request, 'hotel/landing.html')
@@ -81,7 +82,7 @@ def payment_success_view(request, booking_id):
 def payment_success_view(request, booking_id):
     booking = get_object_or_404(Booking, id=booking_id)
     return render(request, 'hotel/payment_success.html', {'booking': booking})
-
+"""
 # --------------------
 # API VIEWS (Django REST Framework)
 # --------------------
@@ -108,6 +109,16 @@ class BookingViewSet(viewsets.ModelViewSet):
     queryset = Booking.objects.all()
     serializer_class = BookingSerializer
 
+    def perform_create(self, serializer):
+        """
+        Called by `.create()`. Save booking and mark room unavailable (or other logic).
+        Validation (no-overlap) should already be enforced in serializer.validate().
+        """
+        booking = serializer.save()
+        # Mark the room unavailable (optional — depends on your business rules)
+        booking.room.is_available = False
+        booking.room.save()
+
     @action(detail = True, methods = ['post'])
     def confirm(self, request, pk = None):
         # confirm booking manually via API
@@ -128,11 +139,40 @@ class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
 
-    @action(detail = True, methods = ['post'])
-    def succeed(self, request, pk = None):
-        # Mark payment as successful
-        payment = self.get_object()
-        payment.is_paid = True
-        payment.save()
-        return Response({'status': 'Payment successful'})
+    def create(self, request, *args, **kwargs):
+        """
+        Expect JSON like:
+        {
+          "booking": <id>,
+          "amount": 50000,
+          "method": "card",
+          "is_paid": true,
+          "reference": "REF12345"
+        }
+        The serializer should validate the booking exists and amount correctness if you implemented that.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payment = serializer.save()
+        _save_payment_record(payment)
+
+        # If payment is paid, mark booking confirmed
+        if getattr(payment, 'is_paid', False) or getattr(payment, 'status', '') == 'success':
+            bk = payment.booking
+            bk.is_confirmed = True
+            bk.save()
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+    
+    def _save_payment_record(payment):
+        payments_dir = os.path.join(settings.BASE_DIR, "payments")
+        os.makedirs(payments_dir, exist_ok=True)
+        file_path = os.path.join(payments_dir, f"payment_booking_{payment.booking.id}.txt")
+        with open(file_path, "w") as f:
+            f.write(f"Booking ID: {payment.booking.id}\n")
+            f.write(f"Total: {payment.booking.total_price}\n")
+            f.write(f"Method: {payment.method}\n")
+            f.write(f"Reference: {payment.reference}\n")
+            f.write(f"Paid: {payment.is_paid}\n")
     

@@ -27,7 +27,7 @@ class Booking(models.Model):
     guests = models.PositiveIntegerField(default=1)
 
     def __str__(self):
-        return f"Booking by {self.user.username} for Room {self.room.number}"
+        return f"Booking by {self.full_name} for Room {self.room.number}"
     
     @property
     def total_price(self):
