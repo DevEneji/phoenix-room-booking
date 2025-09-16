@@ -25,6 +25,7 @@ class Booking(models.Model):
     check_out = models.DateField()
     created_at = models.DateTimeField(auto_now_add = True)
     guests = models.PositiveIntegerField(default=1)
+    is_confirmed = models.BooleanField(default=False)
 
     def __str__(self):
         return f"Booking by {self.full_name} for Room {self.room.number}"
@@ -41,6 +42,8 @@ class Payment(models.Model):
     amount = models.DecimalField(max_digits = 10, decimal_places= 2)
     is_paid = models.BooleanField(default = False)
     payment_date = models.DateTimeField(auto_now_add = True)
+    method = models.CharField(max_length=20, blank=True, null=True)
+    reference = models.CharField(max_length=100, blank=True, null=True)
 
     def __str__(self):
         return f"payment for {self.booking} - {'Paid' if self.is_paid else 'Pending'}"

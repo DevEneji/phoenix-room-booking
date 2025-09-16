@@ -111,11 +111,11 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         """
-        Called by `.create()`. Save booking and mark room unavailable (or other logic).
+        Called by `.create()`. Save booking and mark room unavailable.
         Validation (no-overlap) should already be enforced in serializer.validate().
         """
         booking = serializer.save()
-        # Mark the room unavailable (optional — depends on your business rules)
+        # Mark the room unavailable
         booking.room.is_available = False
         booking.room.save()
 
@@ -141,7 +141,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         """
-        Expect JSON like:
+        Expected output example:
         {
           "booking": <id>,
           "amount": 50000,
@@ -149,12 +149,12 @@ class PaymentViewSet(viewsets.ModelViewSet):
           "is_paid": true,
           "reference": "REF12345"
         }
-        The serializer should validate the booking exists and amount correctness if you implemented that.
+        The serializer should validate the booking exists and amount correctness.
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         payment = serializer.save()
-        _save_payment_record(payment)
+        self._save_payment_record(payment)
 
         # If payment is paid, mark booking confirmed
         if getattr(payment, 'is_paid', False) or getattr(payment, 'status', '') == 'success':
