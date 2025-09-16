@@ -149,7 +149,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
           "is_paid": true,
           "reference": "REF12345"
         }
-        The serializer should validate the booking exists and amount correctness.
+        The serializer should validate the bookmount correctness.
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
