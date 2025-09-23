@@ -2,14 +2,20 @@
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.conf import settings
+from django.contrib.auth.models import User
+from django.contrib.auth import authenticate
 import os
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
+from rest_framework.authtoken.models import Token
+from rest_framework.views import APIView
 from .forms import BookingForm
 from .models import Room, Booking, Payment
-from .serializers import RoomSerializer, BookingSerializer, PaymentSerializer
+from .serializers import RoomSerializer, BookingSerializer, PaymentSerializer, RegisterSerializer, UserSerializer
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 # --------------------
 # FRONTEND VIEWS (basic HTML templates)
@@ -157,7 +163,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         self._save_payment_record(payment)
 
         # If payment is paid, mark booking confirmed
-        if getattr(payment, 'is_paid', False) or getattr(payment, 'status', '') == 'success':
+        if payment.is_paid:
             bk = payment.booking
             bk.is_confirmed = True
             bk.save()
@@ -165,7 +171,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
     
-    def _save_payment_record(payment):
+    def _save_payment_record(self, payment):
         payments_dir = os.path.join(settings.BASE_DIR, "payments")
         os.makedirs(payments_dir, exist_ok=True)
         file_path = os.path.join(payments_dir, f"payment_booking_{payment.booking.id}.txt")
@@ -175,4 +181,53 @@ class PaymentViewSet(viewsets.ModelViewSet):
             f.write(f"Method: {payment.method}\n")
             f.write(f"Reference: {payment.reference}\n")
             f.write(f"Paid: {payment.is_paid}\n")
-    
+
+class RegisterView(APIView):
+    @swagger_auto_schema(
+            request_body = openapi.Schema(
+                type = openapi.TYPE_OBJECT,
+                properties = {
+                    'username': openapi.Schema(type = openapi.TYPE_STRING),
+                    'email': openapi.Schema(type = openapi.TYPE_STRING, format = openapi.FORMAT_EMAIL),
+                    'password': openapi.Schema(type = openapi.TYPE_STRING, format = openapi.FORMAT_PASSWORD),
+                },
+                required = ['username', 'password'],
+            ),
+            responses={201: 'User created successfully with token', 400: "Validation error"}
+    )
+    def post(self, request):
+        serializer = RegisterSerializer(data = request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            token, _ = Token.objects.get_or_create(user = user)
+            return Response({
+                "user": UserSerializer(user).data,
+                "token": token.key
+            }, status = status.HTTP_201_CREATED)
+        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
+
+class LoginView(APIView):
+    @swagger_auto_schema(
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'username': openapi.Schema(type=openapi.TYPE_STRING),
+                'password': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_PASSWORD),
+            },
+            required=['username', 'password'],
+        ),
+        responses={200: "Login success with token", 401: "Invalid credentials"}
+    )
+    def post(self, request):
+        username = request.data.get("username")
+        password = request.data.get("password")
+        user = authenticate(username = username, password = password)
+
+        if not user:
+            return Response({"error": "Invalid Credentials"}, status = status.HTTP_401_UNAUTHORIZED)
+        token, _ = Token.objects.get_or_create(user = user)
+        return Response({
+            "user": UserSerializer(user).data,
+            "token": token.key
+        })
+        
