@@ -1,8 +1,7 @@
 # hotel/urls.py
-from django.http import JsonResponse
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from hotel.views import RoomViewSet, BookingViewSet, PaymentViewSet
+from hotel.views import RoomViewSet, BookingViewSet, PaymentViewSet, RegisterView, LoginView
 
 
 router = DefaultRouter()
@@ -11,12 +10,8 @@ router.register(r'bookings', BookingViewSet, basename='booking')
 router.register(r'payments', PaymentViewSet, basename='payment')
 
 
-def root_view(request):
-    return JsonResponse({"message": "Welcome to the Phoenix Hotel API. Visit /api/ for endpoints."})
-
 urlpatterns = [
-    path('', root_view),
-    
-    # All API routes live under /api/
-    path('api/', include(router.urls)),
+    path('', include(router.urls)),  # all API routes
+    path('auth/register/', RegisterView.as_view(), name='register'),
+    path('auth/login/', LoginView.as_view(), name='login'),
 ]

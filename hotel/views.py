@@ -5,90 +5,20 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 import os
-from rest_framework import viewsets, filters, status
+from rest_framework import viewsets, filters, status, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from rest_framework.authtoken.models import Token
 from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
 from .forms import BookingForm
 from .models import Room, Booking, Payment
-from .serializers import RoomSerializer, BookingSerializer, PaymentSerializer, RegisterSerializer, UserSerializer
-from drf_yasg.utils import swagger_auto_schema
-from drf_yasg import openapi
+from .serializers import RoomSerializer, BookingSerializer, PaymentSerializer, RegisterSerializer, UserSerializer, LoginSerializer
 
-# --------------------
-# FRONTEND VIEWS (basic HTML templates)
-# --------------------
-"""
-def landing_page(request):
-    # A simple landing page
-    return render(request, 'hotel/landing.html')
-
-def room_list(request):
-    # Display all rooms (basic HTML rendering)
-    rooms = Room.objects.all()
-    return render(request, 'hotel/rooms.html', {'rooms': rooms})
-
-def book_room(request):
-    rooms = Room.objects.filter(is_available=True)  # only show available rooms
-    
-    if request.method == 'POST':
-        form = BookingForm(request.POST)
-        if form.is_valid():
-            booking = form.save()
-
-            # Optional: mark the room unavailable after booking
-            booking.room.is_available = False
-            booking.room.save()
-
-            return redirect('payment', booking_id=booking.id)
-    else:
-        form = BookingForm()
-    return render(request, 'hotel/book.html', {'form': form, 'rooms': rooms})
-
-def payment_view(request, booking_id):
-    booking = get_object_or_404(Booking, id=booking_id)
-
-    if request.method == "POST":
-        bank_name = request.POST.get("bank_name")
-        card_type = request.POST.get("card_type")
-        currency = request.POST.get("currency")
-        card_number = request.POST.get("card_number")
-        expiry_date = request.POST.get("expiry_date")
-
-        # Simulate saving payment details into a text file
-        payments_dir = os.path.join(settings.BASE_DIR, "payments")
-        os.makedirs(payments_dir, exist_ok=True)  # Ensure directory exists
-
-        file_path = os.path.join(payments_dir, f"payment_booking_{booking.id}.txt")
-        with open(file_path, "w") as f:
-            f.write(f"Booking ID: {booking.id}\n")
-            f.write(f"Room: {booking.room}\n")
-            f.write(f"Check-in: {booking.check_in}\n")
-            f.write(f"Check-out: {booking.check_out}\n")
-            f.write(f"Total: {booking.total_price}\n\n")
-            f.write("---- Payment Details ----\n")
-            f.write(f"Bank Name: {bank_name}\n")
-            f.write(f"Card Type: {card_type}\n")
-            f.write(f"Currency: {currency}\n")
-            f.write(f"Card Number: {card_number}\n")
-            f.write(f"Expiry Date: {expiry_date}\n")
-
-        # Redirect to payment success page
-        return redirect("payment_success", booking_id=booking.id)
-
-    return render(request, "hotel/payment.html", {"booking": booking})
+from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiRequest, OpenApiResponse, OpenApiTypes
 
 
-def payment_success_view(request, booking_id):
-    booking = get_object_or_404(Booking, id=booking_id)
-    return render(request, "payment_success.html", {"booking": booking})
-
-def payment_success_view(request, booking_id):
-    booking = get_object_or_404(Booking, id=booking_id)
-    return render(request, 'hotel/payment_success.html', {'booking': booking})
-"""
 # --------------------
 # API VIEWS (Django REST Framework)
 # --------------------
@@ -183,18 +113,27 @@ class PaymentViewSet(viewsets.ModelViewSet):
             f.write(f"Paid: {payment.is_paid}\n")
 
 class RegisterView(APIView):
-    @swagger_auto_schema(
-            request_body = openapi.Schema(
-                type = openapi.TYPE_OBJECT,
-                properties = {
-                    'username': openapi.Schema(type = openapi.TYPE_STRING),
-                    'email': openapi.Schema(type = openapi.TYPE_STRING, format = openapi.FORMAT_EMAIL),
-                    'password': openapi.Schema(type = openapi.TYPE_STRING, format = openapi.FORMAT_PASSWORD),
-                },
-                required = ['username', 'password'],
+    permission_classes =  [AllowAny]
+    serializer_class = RegisterSerializer
+    queryset = User.objects.all()
+
+    @extend_schema(
+        request = RegisterSerializer,
+        responses = {
+            201: OpenApiExample(
+                'Successful Registration',
+                summary="Success Example",
+                value = {"message": "User created successfully"}
             ),
-            responses={201: 'User created successfully with token', 400: "Validation error"}
+            400: OpenApiExample(
+                'Invalid Request',
+                summary="Error Example",
+                value = {"error": "Username already exists"}
+            )
+        },
+        description="Register a new user by providing username, email, and password."
     )
+    
     def post(self, request):
         serializer = RegisterSerializer(data = request.data)
         if serializer.is_valid():
@@ -207,27 +146,63 @@ class RegisterView(APIView):
         return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
 
 class LoginView(APIView):
-    @swagger_auto_schema(
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'username': openapi.Schema(type=openapi.TYPE_STRING),
-                'password': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_PASSWORD),
-            },
-            required=['username', 'password'],
-        ),
-        responses={200: "Login success with token", 401: "Invalid credentials"}
-    )
-    def post(self, request):
-        username = request.data.get("username")
-        password = request.data.get("password")
-        user = authenticate(username = username, password = password)
+    permission_classes =  [AllowAny]
 
+    @extend_schema(
+        operation_id="user_login",
+        summary = "Login user and obtain authentication token",
+        description = (
+            "Authenticate a user using their **username** and **password**.\n\n"
+            "If credentials are valid, the system returns the user's details and a token.\n"
+            "Otherwise, it returns a 401 error."
+        ),
+        request = LoginSerializer, # the serializer describing the input fields
+        responses={
+            200: OpenApiResponse(
+                response = OpenApiTypes.OBJECT,
+                description="Login success with token",
+                examples=[
+                    OpenApiExample(
+                        "Success Example",
+                        summary="Successful login response",
+                        value = {
+                            "user": {
+                                "id": 1,
+                                "username": "john_doe",
+                                "email": "john@example.com"
+                            },
+                            "token": "0a1b2c3d4e5f6g7h8i9j"
+                        }
+                    )
+                ]
+            ),
+            401: OpenApiResponse(
+                description = "Invalid credentials",
+                examples = [
+                    OpenApiExample(
+                        "Error Example",
+                        summary = "Failed login attempt",
+                        value = {"error": "Invalid credentials"}
+                    )
+                ]
+            )
+        },
+        tags = ["Authentication"]
+    )
+    
+    def post(self, request):
+        serializer = LoginSerializer(data = request.data)
+        serializer.is_valid(raise_exception = True)
+
+        username = serializer.validated_data["username"]
+        password = serializer.validated_data["password"]
+
+        user = authenticate(username = username, password = password)
         if not user:
-            return Response({"error": "Invalid Credentials"}, status = status.HTTP_401_UNAUTHORIZED)
+            return Response({"error": "Invalid credentials"}, status = status.HTTP_401_UNAUTHORIZED)
         token, _ = Token.objects.get_or_create(user = user)
         return Response({
             "user": UserSerializer(user).data,
             "token": token.key
-        })
+        }, status = status.HTTP_200_OK)
         

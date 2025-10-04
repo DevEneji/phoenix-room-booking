@@ -16,33 +16,36 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.http import JsonResponse
 from rest_framework import permissions
-from drf_yasg.views import get_schema_view
-from drf_yasg import openapi
-from hotel.views import RegisterView, LoginView
-
-
-schema_view = get_schema_view(
-    openapi.Info(
-        title = "Phoenix Hotel API",
-        default_version = 'v1',
-        description = "API documentation for Phoenix Hotel",
-        terms_of_service = "https://www.google.com/policies/terms/",
-        contact = openapi.Contact(email = "support@phoenixhotel.com"),
-        license = openapi.License(name = "BSD License"),
-    ),
-    public=True,
-    permission_classes = (permissions.AllowAny,),
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularSwaggerView,
+    SpectacularRedocView,
 )
+
+def root_view(request):
+    return JsonResponse({
+        "message": "Welcome to the Phoenix Hotel API.",
+        "docs": {
+            "swagger": "/swagger/",
+            "redoc": "/redoc/",
+            "schema": "/api/schema/"
+        },
+        "api_base": "/api/"
+    })
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('', root_view),
 
-    # Include all routes (frontend + API) from hotel/urls.py
-    path("", include("hotel.urls")), # delegate main API & routers to app
-    path('api/auth/register/', RegisterView.as_view(), name='register'),
-    path('api/auth/login/', LoginView.as_view(), name='login'),
+    # Main API routes — all from hotel app
+    path('api/', include('hotel.urls')),
 
-    path('swagger/', schema_view.with_ui('swagger', cache_timeout = 0), name = 'schema-swagger-ui'),
-    path('redoc/', schema_view.with_ui('redoc', cache_timeout = 0), name = 'schema-redoc'),
+    # === OpenAPI Schema & Docs ===
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),  # raw schema (JSON)
+    path('swagger/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    path('redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 ]
+
+

@@ -3,7 +3,10 @@
 from rest_framework import serializers
 from .models import Room, Booking, Payment
 from django.contrib.auth.models import User
+from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
+from django.utils.translation import gettext as _
+
 
 class RoomSerializer(serializers.ModelSerializer):
     class Meta:
@@ -47,3 +50,25 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
         Token.objects.create(user = user)
         return user
+
+class LoginSerializer(serializers.Serializer):
+    username = serializers.CharField(
+        help_text = "The username of the user.",
+    )
+    password = serializers.CharField(
+        required = True,
+        write_only = True,
+        help_text = "The user's password.",
+        style = {'input_type': 'password'}
+    )
+
+    def validate(self, attrs):
+        username = attrs.get("username")
+        password = attrs.get("password")
+
+        user = authenticate(username = username, password = password)
+        if not user:
+            raise serializers.ValidationError(_("Invalid username or password"))
+        
+        attrs["user"] = user
+        return attrs
