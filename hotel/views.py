@@ -13,8 +13,8 @@ from rest_framework.authtoken.models import Token
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from .forms import BookingForm
-from .models import Room, Booking, Payment
-from .serializers import RoomSerializer, BookingSerializer, PaymentSerializer, RegisterSerializer, UserSerializer, LoginSerializer
+from .models import Room, Booking, Payment, RoomType
+from .serializers import RoomSerializer, RoomTypeSerializer, BookingSerializer, PaymentSerializer, RegisterSerializer, UserSerializer, LoginSerializer
 
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiRequest, OpenApiResponse, OpenApiTypes
 
@@ -22,6 +22,10 @@ from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiRequest,
 # --------------------
 # API VIEWS (Django REST Framework)
 # --------------------
+
+class RoomTypeViewSet(viewsets.ModelViewSet):
+    queryset = RoomType.objects.all()
+    serializer_class = RoomTypeSerializer
 
 class RoomViewSet(viewsets.ModelViewSet):
     queryset = Room.objects.all()

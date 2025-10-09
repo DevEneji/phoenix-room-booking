@@ -4,16 +4,80 @@ from django.db import models
 from django.contrib.auth.models import User
 
 # Create your models here.
+
+class RoomType(models.Model):
+    name = models.CharField(max_length = 100, unique = True)
+    description = models.TextField(blank = True)
+    price_per_night = models.DecimalField(max_digits = 8, decimal_places=2)
+    capacity = models.PositiveIntegerField()# Number of people the room can hold
+    beds = models.PositiveIntegerField(default = 1) #No of beds
+
+    def __str__(self):
+        return self.name
+
 class Room(models.Model):
-    # Hotel room with capacity and price
-    number = models.CharField(max_length = 10, unique = True)
-    room_type = models.CharField(max_length = 50) # e.g., Single, Double, Suite
-    capacity = models.IntegerField()
-    price_per_night = models.DecimalField(max_digits = 10, decimal_places = 2)
-    is_available = models.BooleanField(default = True)
+    # Hotel room with type and price
+    room_number = models.CharField(max_length=10, unique=True)
+    room_type = models.ForeignKey(RoomType, on_delete=models.CASCADE, related_name="rooms")
+    is_available = models.BooleanField(default=True)
 
     def __str__(self):
         return f"{self.room_type} - ${self.price_per_night}"
+
+class Staff(models.Model):
+    # Link to django's built-in User model for login/authentication
+    user = models.OneToOneField(User, on_delete = models.CASCADE)
+
+     # Staff-specific information
+    full_name = models.CharField(max_length=150)
+    gender = models.CharField(max_length=10, choices = [('Male', 'Male'), ('Female', 'Female'), ('Other', 'Other')])
+    date_of_birth = models.DateField()
+    contact_details = models.CharField(max_length=100)# Could be phone or email
+    address = models.TextField()
+    emergency_contact = models.CharField(max_length = 100)
+
+    # Job details
+    role = models.CharField(max_length=50, choices = [
+        ('Manager', 'Manager'),
+        ('Receptionist', 'Receptionist'),
+        ('Cleaner', 'Cleaner'),
+        ('Chef', 'Chef'),
+        ('Other', 'Other'),
+    ])
+    date_of_employment = models.DateField()
+    employment_status = models.CharField(max_length=20, choices = [
+        ('Active', 'Active'),
+        ('On leave', 'On leave'),
+        ('Retired', 'Retired'),
+        ('Terminated', 'Terminated'),
+    ])
+
+    # Active status (instead of deleting staff)
+    is_active = models.BooleanField(default = True)
+
+    def __str__(self):
+        return f"{self.full_name} ({self.role})"
+    
+class Customer(models.Model):
+    # Basic information
+    full_name = models.CharField(max_length = 150)
+    gender = models.CharField(max_length = 10, choices = [
+        ('Male', 'Male'),
+        ('Female', 'Female'),
+    ])
+    date_of_birth = models.DateField()
+    nationality = models.CharField(max_length = 100)
+
+    # Contact details
+    phone_number = models.CharField(max_length = 20, unique = True)
+    email = models.EmailField(unique = True)
+    home_address = models.TextField()
+
+    # Record management
+    is_active = models.BooleanField(default = True) # mark inactive instead of del
+
+    def __str__(self):
+        return f"{self.full_name} ({self.phone_number})"
 
 class Booking(models.Model):
     # Represents a reservation for a room by a user
@@ -26,6 +90,21 @@ class Booking(models.Model):
     created_at = models.DateTimeField(auto_now_add = True)
     guests = models.PositiveIntegerField(default=1)
     is_confirmed = models.BooleanField(default=False)
+
+    # Link booking to receptionist (staff member who created it)
+    created_by = models.ForeignKey(
+        Staff,
+        on_delete=models.SET_NULL,
+        null = True,
+        blank = True,
+        related_name = "bookings"
+    )
+    # Link customer to bookings
+    customer = models.ForeignKey(
+        Customer,
+        on_delete = models.CASCADE,
+        related_name = "bookings"
+    )
 
     def __str__(self):
         return f"Booking by {self.full_name} for Room {self.room.number}"
@@ -47,3 +126,5 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"payment for {self.booking} - {'Paid' if self.is_paid else 'Pending'}"
+
+
