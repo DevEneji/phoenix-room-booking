@@ -1,173 +1,148 @@
-# API views and frontend views (landing page, room listings, booking forms).
+# Clean API Views for Phoenix Hotel
 
-from django.shortcuts import render, redirect, get_object_or_404
+from django.shortcuts import get_object_or_404
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 import os
-from rest_framework import viewsets, filters, status, generics
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.decorators import api_view
 from rest_framework.authtoken.models import Token
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
-from .forms import BookingForm
 from .models import Room, Booking, Payment
-from .serializers import RoomSerializer, BookingSerializer, PaymentSerializer, RegisterSerializer, UserSerializer, LoginSerializer
-
-from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiRequest, OpenApiResponse, OpenApiTypes
+from .serializers import (
+    RoomSerializer,
+    BookingSerializer,
+    PaymentSerializer,
+    RegisterSerializer,
+    UserSerializer,
+    LoginSerializer
+)
+from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse, OpenApiTypes
 
 
 # --------------------
-# API VIEWS (Django REST Framework)
+# ROOM VIEWS
 # --------------------
 
 class RoomListAPIView(APIView):
-    """
-    Simple view to list all rooms and create new rooms
-    """
+    """List all active rooms or create a new room."""
     def get(self, request):
-        rooms = Room.objects.filter(is_active = True)
-        serializer = RoomSerializer(rooms, many = True)
+        rooms = Room.objects.filter(is_active=True)
+        serializer = RoomSerializer(rooms, many=True)
         return Response(serializer.data)
     
     def post(self, request):
-        serializer = RoomSerializer(data = request.data)
+        serializer = RoomSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
-            return Response(serializer.data, status = status.HTTP_201_CREATED)
-        return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class RoomDetailAPIView(APIView):
-    """
-    Simple view to get, update or delete a single room
-    """
+    """Retrieve, update, or soft-delete a room."""
     def get(self, request, pk):
-        room = get_object_or_404(Room, pk=pk, is_active = True)
+        room = get_object_or_404(Room, pk=pk, is_active=True)
         serializer = RoomSerializer(room)
         return Response(serializer.data)
     
     def put(self, request, pk):
-        room = get_object_or_404(Room, pk=pk, is_active = True)
-        serializer = RoomSerializer(room, data = request.data)
+        room = get_object_or_404(Room, pk=pk, is_active=True)
+        serializer = RoomSerializer(room, data=request.data)
         if serializer.is_valid():
             serializer.save()
-            return Response(serializer.data, status = status.HTTP_201_CREATED)
-        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
     def delete(self, request, pk):
-        room = get_object_or_404(Room, pk = pk, is_active = True)
+        room = get_object_or_404(Room, pk=pk, is_active=True)
         room.is_active = False
         room.save()
-        return Response(status = status.HTTP_204_NO_CONTENT)
-    
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class AvailableRoomsAPIView(APIView):
-    """
-    Simple view to get available rooms
-    """
+    """Filter available rooms by type or price."""
     def get(self, request):
-        # Get query parameters
         room_type = request.GET.get('room_type')
         min_price = request.GET.get('min_price')
         max_price = request.GET.get('max_price')
 
-        # Start with available rooms
-        rooms = Room.objects.filter(status = 'Available, is_active = True')
+        rooms = Room.objects.filter(status='Available', is_active=True)
 
-        # Apply filters if provided
         if room_type:
-            rooms = rooms.filter(room_type = room_type)
+            rooms = rooms.filter(room_type=room_type)
         if min_price:
-            rooms = rooms.filter(price_per_night__gte = min_price)
+            rooms = rooms.filter(price_per_night__gte=min_price)
         if max_price:
-            rooms = rooms.filter(price_per_night__lte = max_price)
+            rooms = rooms.filter(price_per_night__lte=max_price)
 
-        serializer = RoomSerializer(rooms, many = True)
-        return Response({
-            'count': rooms.count(),
-            'rooms': serializer.data
-        })
-    
+        serializer = RoomSerializer(rooms, many=True)
+        return Response({'count': rooms.count(), 'rooms': serializer.data})
+
+
 class UpdateRoomStatusAPIView(APIView):
-    """
-    Simple view to update room status
-    """
+    """Patch endpoint to update room availability status."""
     def patch(self, request, pk):
-        room = get_object_or_404(Room, pk, is_active = True)
+        room = get_object_or_404(Room, pk=pk, is_active=True)
         new_status = request.data.get('status')
 
-        # Validate status
         valid_statuses = [choice[0] for choice in Room.STATUS_CHOICES]
         if new_status not in valid_statuses:
             return Response(
                 {'error': f'Status must be one of: {", ".join(valid_statuses)}'},
-                status = status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Update status
         room.status = new_status
         room.save()
+        return Response(RoomSerializer(room).data)
 
-        serializer = RoomSerializer(room)
-        return Response(serializer.data)
+
+# --------------------
+# BOOKING & PAYMENT VIEWS
+# --------------------
 
 class BookingViewSet(viewsets.ModelViewSet):
     queryset = Booking.objects.all()
     serializer_class = BookingSerializer
 
     def perform_create(self, serializer):
-        """
-        Called by `.create()`. Save booking and mark room unavailable.
-        Validation (no-overlap) should already be enforced in serializer.validate().
-        """
         booking = serializer.save()
-        # Mark the room unavailable
         booking.room.is_available = False
         booking.room.save()
 
-    @action(detail = True, methods = ['post'])
-    def confirm(self, request, pk = None):
-        # confirm booking manually via API
+    @action(detail=True, methods=['post'])
+    def confirm(self, request, pk=None):
         booking = self.get_object()
         booking.is_confirmed = True
         booking.save()
         return Response({'status': 'Booking confirmed'})
     
-    @action(detail = True, methods = ['post'])
-    def cancel(self, request, pk = None):
-        # Cancel booking manually via API
+    @action(detail=True, methods=['post'])
+    def cancel(self, request, pk=None):
         booking = self.get_object()
         booking.delete()
         return Response({'status': 'Booking canceled'})
-        
+
 
 class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
 
     def create(self, request, *args, **kwargs):
-        """
-        Expected output example:
-        {
-          "booking": <id>,
-          "amount": 50000,
-          "method": "card",
-          "is_paid": true,
-          "reference": "REF12345"
-        }
-        The serializer should validate the bookmount correctness.
-        """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         payment = serializer.save()
         self._save_payment_record(payment)
 
-        # If payment is paid, mark booking confirmed
         if payment.is_paid:
-            bk = payment.booking
-            bk.is_confirmed = True
-            bk.save()
+            booking = payment.booking
+            booking.is_confirmed = True
+            booking.save()
 
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
@@ -176,104 +151,68 @@ class PaymentViewSet(viewsets.ModelViewSet):
         payments_dir = os.path.join(settings.BASE_DIR, "payments")
         os.makedirs(payments_dir, exist_ok=True)
         file_path = os.path.join(payments_dir, f"payment_booking_{payment.booking.id}.txt")
+
+        total_price = getattr(payment.booking, "total_price", "N/A")
         with open(file_path, "w") as f:
             f.write(f"Booking ID: {payment.booking.id}\n")
-            f.write(f"Total: {payment.booking.total_price}\n")
+            f.write(f"Total: {total_price}\n")
             f.write(f"Method: {payment.method}\n")
             f.write(f"Reference: {payment.reference}\n")
             f.write(f"Paid: {payment.is_paid}\n")
 
+
+# --------------------
+# AUTHENTICATION VIEWS
+# --------------------
+
 class RegisterView(APIView):
-    permission_classes =  [AllowAny]
-    serializer_class = RegisterSerializer
-    queryset = User.objects.all()
+    permission_classes = [AllowAny]
 
     @extend_schema(
-        request = RegisterSerializer,
-        responses = {
-            201: OpenApiExample(
-                'Successful Registration',
-                summary="Success Example",
-                value = {"message": "User created successfully"}
-            ),
-            400: OpenApiExample(
-                'Invalid Request',
-                summary="Error Example",
-                value = {"error": "Username already exists"}
-            )
+        request=RegisterSerializer,
+        responses={
+            201: OpenApiExample("User created", value={"message": "User created successfully"}),
+            400: OpenApiExample("Error", value={"error": "Validation error"})
         },
-        description="Register a new user by providing username, email, and password."
+        description="Register a new user with username, email, and password."
     )
-    
     def post(self, request):
-        serializer = RegisterSerializer(data = request.data)
+        serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-            token, _ = Token.objects.get_or_create(user = user)
+            token, _ = Token.objects.get_or_create(user=user)
             return Response({
                 "user": UserSerializer(user).data,
                 "token": token.key
-            }, status = status.HTTP_201_CREATED)
-        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class LoginView(APIView):
-    permission_classes =  [AllowAny]
+    permission_classes = [AllowAny]
 
     @extend_schema(
         operation_id="user_login",
-        summary = "Login user and obtain authentication token",
-        description = (
-            "Authenticate a user using their **username** and **password**.\n\n"
-            "If credentials are valid, the system returns the user's details and a token.\n"
-            "Otherwise, it returns a 401 error."
-        ),
-        request = LoginSerializer, # the serializer describing the input fields
+        summary="Login and retrieve authentication token",
+        request=LoginSerializer,
         responses={
-            200: OpenApiResponse(
-                response = OpenApiTypes.OBJECT,
-                description="Login success with token",
-                examples=[
-                    OpenApiExample(
-                        "Success Example",
-                        summary="Successful login response",
-                        value = {
-                            "user": {
-                                "id": 1,
-                                "username": "john_doe",
-                                "email": "john@example.com"
-                            },
-                            "token": "0a1b2c3d4e5f6g7h8i9j"
-                        }
-                    )
-                ]
-            ),
-            401: OpenApiResponse(
-                description = "Invalid credentials",
-                examples = [
-                    OpenApiExample(
-                        "Error Example",
-                        summary = "Failed login attempt",
-                        value = {"error": "Invalid credentials"}
-                    )
-                ]
-            )
-        },
-        tags = ["Authentication"]
+            200: OpenApiResponse(description="Success"),
+            401: OpenApiResponse(description="Invalid credentials")
+        }
     )
-    
     def post(self, request):
-        serializer = LoginSerializer(data = request.data)
-        serializer.is_valid(raise_exception = True)
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
-        username = serializer.validated_data["username"]
-        password = serializer.validated_data["password"]
-
-        user = authenticate(username = username, password = password)
+        user = authenticate(
+            username=serializer.validated_data["username"],
+            password=serializer.validated_data["password"]
+        )
         if not user:
-            return Response({"error": "Invalid credentials"}, status = status.HTTP_401_UNAUTHORIZED)
-        token, _ = Token.objects.get_or_create(user = user)
+            return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        token, _ = Token.objects.get_or_create(user=user)
         return Response({
             "user": UserSerializer(user).data,
             "token": token.key
-        }, status = status.HTTP_200_OK)
-        
+        }, status=status.HTTP_200_OK)
