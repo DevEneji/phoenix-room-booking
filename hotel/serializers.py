@@ -1,7 +1,7 @@
 # Serializers convert model data into JSON and validat API input.
 
 from rest_framework import serializers
-from .models import Room, Booking, Payment, RoomType
+from .models import Room, Booking, Payment
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
@@ -11,14 +11,7 @@ from django.utils.translation import gettext as _
 class RoomSerializer(serializers.ModelSerializer):
     class Meta:
         model = Room
-        fields = ["room_number", "is_available"]
-
-class RoomTypeSerializer(serializers.ModelSerializer):
-    rooms = RoomSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = RoomType
-        fields = ["id", "name", "description", "price_per_night", "capacity", "beds", "rooms"]
+        fields = '__all__'
 
 class BookingSerializer(serializers.ModelSerializer):
     class Meta:

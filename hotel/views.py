@@ -13,8 +13,8 @@ from rest_framework.authtoken.models import Token
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from .forms import BookingForm
-from .models import Room, Booking, Payment, RoomType
-from .serializers import RoomSerializer, RoomTypeSerializer, BookingSerializer, PaymentSerializer, RegisterSerializer, UserSerializer, LoginSerializer
+from .models import Room, Booking, Payment
+from .serializers import RoomSerializer, BookingSerializer, PaymentSerializer, RegisterSerializer, UserSerializer, LoginSerializer
 
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiRequest, OpenApiResponse, OpenApiTypes
 
@@ -23,27 +23,94 @@ from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiRequest,
 # API VIEWS (Django REST Framework)
 # --------------------
 
-class RoomTypeViewSet(viewsets.ModelViewSet):
-    queryset = RoomType.objects.all()
-    serializer_class = RoomTypeSerializer
-
-class RoomViewSet(viewsets.ModelViewSet):
-    queryset = Room.objects.all()
-    serializer_class = RoomSerializer
-    filter_backends = [filters.SearchFilter]
-    search_fields = ['room_type'] # Allow searching by room type
-
-    @action(detail = False, methods = ['get'])
-    def available(self, request):
-        # Custom endpoint: /api/rooms/available/?check_in=YYYY-MM-DD&check_out=YYYY-MM-DD
-        check_in = request.GET.get('check_in')
-        check_out = request.GET.get('check_out')
-
-        # Return rooms marked as available
-        rooms = Room.objects.filter(is_available = True)
-        serializer = self.get_serializer(rooms, many = True)
+class RoomListAPIView(APIView):
+    """
+    Simple view to list all rooms and create new rooms
+    """
+    def get(self, request):
+        rooms = Room.objects.filter(is_active = True)
+        serializer = RoomSerializer(rooms, many = True)
         return Response(serializer.data)
     
+    def post(self, request):
+        serializer = RoomSerializer(data = request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status = status.HTTP_201_CREATED)
+        return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
+
+class RoomDetailAPIView(APIView):
+    """
+    Simple view to get, update or delete a single room
+    """
+    def get(self, request, pk):
+        room = get_object_or_404(Room, pk=pk, is_active = True)
+        serializer = RoomSerializer(room)
+        return Response(serializer.data)
+    
+    def put(self, request, pk):
+        room = get_object_or_404(Room, pk=pk, is_active = True)
+        serializer = RoomSerializer(room, data = request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status = status.HTTP_201_CREATED)
+        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
+    
+    def delete(self, request, pk):
+        room = get_object_or_404(Room, pk = pk, is_active = True)
+        room.is_active = False
+        room.save()
+        return Response(status = status.HTTP_204_NO_CONTENT)
+    
+class AvailableRoomsAPIView(APIView):
+    """
+    Simple view to get available rooms
+    """
+    def get(self, request):
+        # Get query parameters
+        room_type = request.GET.get('room_type')
+        min_price = request.GET.get('min_price')
+        max_price = request.GET.get('max_price')
+
+        # Start with available rooms
+        rooms = Room.objects.filter(status = 'Available, is_active = True')
+
+        # Apply filters if provided
+        if room_type:
+            rooms = rooms.filter(room_type = room_type)
+        if min_price:
+            rooms = rooms.filter(price_per_night__gte = min_price)
+        if max_price:
+            rooms = rooms.filter(price_per_night__lte = max_price)
+
+        serializer = RoomSerializer(rooms, many = True)
+        return Response({
+            'count': rooms.count(),
+            'rooms': serializer.data
+        })
+    
+class UpdateRoomStatusAPIView(APIView):
+    """
+    Simple view to update room status
+    """
+    def patch(self, request, pk):
+        room = get_object_or_404(Room, pk, is_active = True)
+        new_status = request.data.get('status')
+
+        # Validate status
+        valid_statuses = [choice[0] for choice in Room.STATUS_CHOICES]
+        if new_status not in valid_statuses:
+            return Response(
+                {'error': f'Status must be one of: {", ".join(valid_statuses)}'},
+                status = status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update status
+        room.status = new_status
+        room.save()
+
+        serializer = RoomSerializer(room)
+        return Response(serializer.data)
 
 class BookingViewSet(viewsets.ModelViewSet):
     queryset = Booking.objects.all()

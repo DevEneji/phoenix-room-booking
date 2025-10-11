@@ -5,24 +5,31 @@ from django.contrib.auth.models import User
 
 # Create your models here.
 
-class RoomType(models.Model):
-    name = models.CharField(max_length = 100, unique = True)
-    description = models.TextField(blank = True)
-    price_per_night = models.DecimalField(max_digits = 8, decimal_places=2)
-    capacity = models.PositiveIntegerField()# Number of people the room can hold
-    beds = models.PositiveIntegerField(default = 1) #No of beds
-
-    def __str__(self):
-        return self.name
-
 class Room(models.Model):
     # Hotel room with type and price
-    room_number = models.CharField(max_length=10, unique=True)
-    room_type = models.ForeignKey(RoomType, on_delete=models.CASCADE, related_name="rooms")
-    is_available = models.BooleanField(default=True)
+    ROOM_TYPES = [
+        ('SINGLE', 'Single Room'),
+        ('DOUBLE', 'Double Room'),
+        ('SUITE', 'Suite'),
+        ('DELUXE', 'Deluxe Room'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('AVAILABLE', 'Available'),
+        ('OCCUPIED', 'Occupied'),
+        ('MAINTENANCE', 'Under Maintenance'),
+    ]
+
+    room_number = models.CharField(max_length=10, unique = True)
+    room_type = models.CharField(max_length = 20, choices = ROOM_TYPES)
+    status = models.CharField(max_length=20, choices = STATUS_CHOICES, default = 'AVAILABLE')
+    price_per_night = models.DecimalField(max_digits=8, decimal_places=2)
+    capacity = models.IntegerField()
+    description = models.TextField(blank = True)
+    is_active = models.BooleanField(default = True)
 
     def __str__(self):
-        return f"{self.room_type} - ${self.price_per_night}"
+        return f"{self.room_number} - ${self.room_type} - ${self.price_per_night}"
 
 class Staff(models.Model):
     # Link to django's built-in User model for login/authentication
