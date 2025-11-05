@@ -11,14 +11,15 @@ from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
-from .models import Room, Booking, Payment
+from .models import Room, Booking, Payment, Staff
 from .serializers import (
     RoomSerializer,
     BookingSerializer,
     PaymentSerializer,
     RegisterSerializer,
     UserSerializer,
-    LoginSerializer
+    LoginSerializer,
+    StaffSerializer
 )
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse, OpenApiTypes
 
@@ -31,7 +32,7 @@ class RoomListAPIView(APIView):
     serializer_class = RoomSerializer
     """List all active rooms or create a new room."""
     def get(self, request):
-        rooms = Room.objects.filter(is_active=True)
+        rooms = Room.objects.all()
         serializer = RoomSerializer(rooms, many=True)
         return Response(serializer.data)
     
@@ -185,6 +186,48 @@ class BookingCancelAPIView(APIView):
         return Response({'status': 'Booking canceled'})
 
 
+class StaffAPIView(APIView):
+    """
+    API endpoint for listing, creating, and managing staff records.
+    """
+
+    permission_classes = [AllowAny]
+    """Retrieve all staff or a single staff member by ID."""
+    def get(self, request, pk = None):
+        if pk:
+            staff = get_object_or_404(Staff, pk = pk, is_active = True)
+            serializer = StaffSerializer(staff)
+            return Response(serializer.data, status = status.HTTP_200_OK)
+        else:
+            staff = Staff.objects.filter(is_active = True)
+            serializer = StaffSerializer(staff, many = True)
+            return Response(serializer.data, status = status.HTTP_200_OK)
+        
+    def post(self, request):
+        """Create a new staff record."""
+        serializer = StaffSerializer(data = request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status = status.HTTP_201_CREATED)
+        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
+    
+    def put(self, request, pk):
+        """Update an existing staff record."""
+        staff = get_object_or_404(Staff, pk = pk, is_active = True)
+        serializer = StaffSerializer(staff, data = request.data, partial = True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status = status.HTTP_200_OK)
+        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
+    
+    def delete(self, request, pk):
+        """Soft-delete a staff member by marking them inactive"""
+        staff = get_object_or_404(Staff, pk = pk)
+        staff.is_active = False
+        staff.save()
+        return Response({"message": "Staff member deactivated successfully."}, status=status.HTTP_204_NO_CONTENT)
+    
+
 # --------------------
 # PAYMENT VIEWS
 # --------------------
@@ -279,6 +322,12 @@ class RegisterView(APIView):
         },
         description="Register a new user with username, email, and password."
     )
+
+    def get(self, request):
+        registered_user = User.objects.all()
+        serializer = UserSerializer(registered_user, many = True)
+        return Response(serializer.data)
+
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():

@@ -13,6 +13,7 @@ from hotel.views import (
     BookingCancelAPIView,
     PaymentListCreateAPIView,
     PaymentDetailAPIView,
+    StaffAPIView,
 )
 
 
@@ -32,6 +33,10 @@ urlpatterns = [
     # Payment endpoints
     path('payments/', PaymentListCreateAPIView.as_view(), name='payment-list-create'),
     path('payments/<int:pk>/', PaymentDetailAPIView.as_view(), name='payment-detail'),
+
+    # Staff Management endpoints
+    path('staff/', StaffAPIView.as_view(), name = 'staff_list_create'),
+    path('staff/<int:pk>/', StaffAPIView.as_view(), name = 'staff-detail'),
     
     # All API routes
     path('auth/register/', RegisterView.as_view(), name='register'),

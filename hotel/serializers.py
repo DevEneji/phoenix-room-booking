@@ -1,7 +1,7 @@
 # Serializers convert model data into JSON and validat API input.
 
 from rest_framework import serializers
-from .models import Room, Booking, Payment
+from .models import Room, Booking, Payment, Staff
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
@@ -50,6 +50,40 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
         Token.objects.create(user = user)
         return user
+
+class StaffSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the Staff model.
+    Includes the linked User data for context.
+    """
+    # Nest the user info (read-only)
+    user = UserSerializer(read_only = True)
+
+    # Allow linking an existing user by ID (optional)
+    user_id = serializers.PrimaryKeyRelatedField(
+        queryset = User.objects.all(),
+        source = 'user',
+        write_only = True,
+        required = False
+    )
+
+    class Meta:
+        model = Staff
+        fields = [
+            'id', 'user', 'user_id',
+            'full_name', 'gender', 'date_of_birth',
+            'contact_details', 'address', 'emergency_contact',
+            'role', 'date_of_employment', 'employment_status',
+            'is_active'
+        ]
+
+    def create(self, validated_data):
+        """
+        Optionally handle creation logic, such as linking an existing user.
+        """
+        return Staff.objects.create(**validated_data)
+
+        
 
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField(
