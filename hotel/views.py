@@ -1,309 +1,36 @@
-# Clean API Views for Phoenix Hotel
-
 from django.shortcuts import get_object_or_404
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.utils import timezone
+from django.db.models import Q
 from django.contrib.auth import authenticate
-import os
-from rest_framework import viewsets, status
+from rest_framework.exceptions import PermissionDenied
+from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny
-from .models import Room, Booking, Payment, Staff
+from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
+from rest_framework.exceptions import ValidationError
+
+from .models import (
+    CustomUser, Hotel, RoomType, Room, CustomerProfile, StaffProfile, 
+    Booking, Payment, Review
+)
 from .serializers import (
+    UserSerializer,
+    HotelSerializer,
+    RoomTypeSerializer,
     RoomSerializer,
     BookingSerializer,
     PaymentSerializer,
+    ReviewSerializer,
     RegisterSerializer,
-    UserSerializer,
     LoginSerializer,
-    StaffSerializer
+    StaffProfileSerializer,
+    CustomerProfileSerializer,
+    AvailabilitySerializer
 )
-from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiResponse, OpenApiTypes
-
-
-# --------------------
-# ROOM VIEWS
-# --------------------
-
-class RoomListAPIView(APIView):
-    serializer_class = RoomSerializer
-    """List all active rooms or create a new room."""
-    def get(self, request):
-        rooms = Room.objects.all()
-        serializer = RoomSerializer(rooms, many=True)
-        return Response(serializer.data)
-    
-    def post(self, request):
-        serializer = RoomSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class RoomDetailAPIView(APIView):
-    serializer_class = RoomSerializer
-    """Retrieve, update, or soft-delete a room."""
-    def get(self, request, pk):
-        room = get_object_or_404(Room, pk=pk, is_active=True)
-        serializer = RoomSerializer(room)
-        return Response(serializer.data)
-    
-    def put(self, request, pk):
-        room = get_object_or_404(Room, pk=pk, is_active=True)
-        serializer = RoomSerializer(room, data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    def delete(self, request, pk):
-        room = get_object_or_404(Room, pk=pk, is_active=True)
-        room.is_active = False
-        room.save()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-class AvailableRoomsAPIView(APIView):
-    serializer_class = RoomSerializer
-    """Filter available rooms by type or price."""
-    def get(self, request):
-        room_type = request.GET.get('room_type')
-        min_price = request.GET.get('min_price')
-        max_price = request.GET.get('max_price')
-
-        rooms = Room.objects.filter(status='Available', is_active=True)
-
-        if room_type:
-            rooms = rooms.filter(room_type=room_type)
-        if min_price:
-            rooms = rooms.filter(price_per_night__gte=min_price)
-        if max_price:
-            rooms = rooms.filter(price_per_night__lte=max_price)
-
-        serializer = RoomSerializer(rooms, many=True)
-        return Response({'count': rooms.count(), 'rooms': serializer.data})
-
-
-class UpdateRoomStatusAPIView(APIView):
-    serializer_class = RoomSerializer
-    """Patch endpoint to update room availability status."""
-    def patch(self, request, pk):
-        room = get_object_or_404(Room, pk=pk, is_active=True)
-        new_status = request.data.get('status')
-
-        valid_statuses = [choice[0] for choice in Room.STATUS_CHOICES]
-        if new_status not in valid_statuses:
-            return Response(
-                {'error': f'Status must be one of: {", ".join(valid_statuses)}'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        room.status = new_status
-        room.save()
-        return Response(RoomSerializer(room).data)
-
-
-# --------------------
-# BOOKING VIEWS
-# --------------------
-
-class BookingListCreateAPIView(APIView):
-    serializer_class = BookingSerializer
-    """
-    Handles:
-    - Get /bookings/ → list all bookings
-    - POST /bookings/ → create a new booking
-    """
-
-    def get(self, request):
-        # get booking objects
-        bookings = Booking.objects.all()
-        # pass them through the serializer
-        serializer = BookingSerializer(bookings, many = True)
-        # return the serialized data
-        return Response(serializer.data)
-    
-    def post(self, request):
-        # pass data through serializer
-        serializer = BookingSerializer(data = request.data)
-        # check if data is valid, if valid return serializer data and status 201
-        if serializer.is_valid():
-            booking = serializer.save()             # save serializer
-            booking.room.is_available = False       # mark room as unavailable
-            booking.room.save()
-            return Response(serializer.data, status = status.HTTP_201_CREATED)
-        # return serializer.errors and 400 status
-        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
-
-class BookingDetailAPIView(APIView):
-    serializer_class = BookingSerializer
-    """
-    Handles:
-    - GET /bookings/<id>/ → retrieve booking
-    - PUT /bookings/<id>/ → update booking
-    - DELETE /bookings/<id>/ → delete booking
-    """
-
-    def get_object(self, pk):
-        return get_object_or_404(Booking, pk = pk)
-    
-    def get(self, request, pk):
-        booking = self.get_object(pk)       # get booking object
-        serializer = BookingSerializer(booking, data = request.data)        # pass it through a serializer
-        # return the serialized data
-        return Response(serializer.data)
-    
-    def put(self, request, pk):
-        booking = self.get_object(pk)       # get booking object
-        serializer = BookingSerializer(booking, data = request.data)        # pass it through a serializer
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status.HTTP_400_BAD_REQUEST)
-    
-    def delete (self, request, pk):
-        booking = self.get_object(pk)
-        booking.delete()
-        return Response(status = status.HTTP_204_NO_CONTENT)
-
-class BookingConfirmAPIView(APIView):
-    serializer_class = BookingSerializer
-    def post(self, request, pk):
-        booking = get_object_or_404(Booking, pk=pk)
-        booking.is_confirmed = True
-        booking.save()
-        return Response({'status': 'Booking confirmed'})
-    
-class BookingCancelAPIView(APIView):
-    serializer_class = BookingSerializer
-    def post(self, request, pk):
-        booking = get_object_or_404(Booking, pk=pk)
-        booking.delete()
-        return Response({'status': 'Booking canceled'})
-
-
-class StaffAPIView(APIView):
-    """
-    API endpoint for listing, creating, and managing staff records.
-    """
-
-    permission_classes = [AllowAny]
-    """Retrieve all staff or a single staff member by ID."""
-    def get(self, request, pk = None):
-        if pk:
-            staff = get_object_or_404(Staff, pk = pk, is_active = True)
-            serializer = StaffSerializer(staff)
-            return Response(serializer.data, status = status.HTTP_200_OK)
-        else:
-            staff = Staff.objects.filter(is_active = True)
-            serializer = StaffSerializer(staff, many = True)
-            return Response(serializer.data, status = status.HTTP_200_OK)
-        
-    def post(self, request):
-        """Create a new staff record."""
-        serializer = StaffSerializer(data = request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status = status.HTTP_201_CREATED)
-        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
-    
-    def put(self, request, pk):
-        """Update an existing staff record."""
-        staff = get_object_or_404(Staff, pk = pk, is_active = True)
-        serializer = StaffSerializer(staff, data = request.data, partial = True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status = status.HTTP_200_OK)
-        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
-    
-    def delete(self, request, pk):
-        """Soft-delete a staff member by marking them inactive"""
-        staff = get_object_or_404(Staff, pk = pk)
-        staff.is_active = False
-        staff.save()
-        return Response({"message": "Staff member deactivated successfully."}, status=status.HTTP_204_NO_CONTENT)
-    
-
-# --------------------
-# PAYMENT VIEWS
-# --------------------
-
-class PaymentListCreateAPIView(APIView):
-    serializer_class = PaymentSerializer
-    """
-    Handles:
-    - GET /payments/ → list all payments
-    - POST /payments/ → create a payment and save a record
-    """
-
-    def get(self, request):
-        payments = Payment.objects.all()                            # get all payment objects
-        serializer = PaymentSerializer(payments, many = True)       # pass them through a serializer
-        return Response(serializer.data)                            # return serialized data
-    
-    def post(self, request):
-        serializer = PaymentSerializer(data = request.data)     # pass the written data through a serializer for proper ordering 
-        if serializer.is_valid():                   # check for validity of serialized data
-            payment = serializer.save()             # save serialized data
-            self._save_payment_record(payment)      # create text file or record of payment
-
-            # If payment is successful, confirm its related booking
-            if payment.is_paid:
-                booking = payment.booking
-                booking.is_confirmed = True
-                booking.save()
-
-            return Response(serializer.data, status = status.HTTP_201_CREATED)
-        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
-    
-    def _save_payment_record(self,payment):
-        """Save a text record of the payment to a local file."""
-        payments_dir = os.path.join(settings.BASE_DIR, "payments")
-        os.makedirs(payments_dir, exist_ok=True)
-
-        file_path = os.path.join(payments_dir, f"payment_booking_{payment.booking.id}.txt")
-        total_price = getattr(payment.booking, "total_price", "N/A")
-
-        with open(file_path, "w") as f:
-            f.write(f"Booking ID: {payment.booking.id}\n")
-            f.write(f"Total: {total_price}\n")
-            f.write(f"Method: {payment.method}\n")
-            f.write(f"Reference: {payment.reference}\n")
-            f.write(f"Paid: {payment.is_paid}\n")
-
-class PaymentDetailAPIView(APIView):
-    serializer_class = PaymentSerializer
-    """
-    Handles:
-    - GET /payments/<id>/ → retrieve a payment
-    - PUT /payments/<id>/ → update a payment
-    - DELETE /payments/<id>/ → delete a payment
-    """
-
-    def get_object(self, pk):
-        return get_object_or_404(Payment, pk=pk)
-    
-    def get(self, request, pk):
-        payment = self.get_object(pk)
-        serializer = PaymentSerializer(payment)
-        return Response(serializer.data)
-    
-    def put(self, request, pk):
-        payment = self.get_object(pk)
-        serializer = PaymentSerializer(payment, data = request.data)
-        if serializer.is_valid():
-            payment = serializer.save()
-            return Response(PaymentSerializer(payment).data)
-        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
-    
-    def delete(self, request, pk):
-        payment = self.get_object(pk)
-        payment.delet()
-        return Response(status = status.HTTP_204_NO_CONTENT)
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
 
 
 # --------------------
@@ -313,20 +40,6 @@ class PaymentDetailAPIView(APIView):
 class RegisterView(APIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
-
-    @extend_schema(
-        request=RegisterSerializer,
-        responses={
-            201: OpenApiExample("User created", value={"message": "User created successfully"}),
-            400: OpenApiExample("Error", value={"error": "Validation error"})
-        },
-        description="Register a new user with username, email, and password."
-    )
-
-    def get(self, request):
-        registered_user = User.objects.all()
-        serializer = UserSerializer(registered_user, many = True)
-        return Response(serializer.data)
 
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
@@ -344,15 +57,6 @@ class LoginView(APIView):
     serializer_class = LoginSerializer
     permission_classes = [AllowAny]
 
-    @extend_schema(
-        operation_id="user_login",
-        summary="Login and retrieve authentication token",
-        request=LoginSerializer,
-        responses={
-            200: OpenApiResponse(description="Success"),
-            401: OpenApiResponse(description="Invalid credentials")
-        }
-    )
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -369,3 +73,292 @@ class LoginView(APIView):
             "user": UserSerializer(user).data,
             "token": token.key
         }, status=status.HTTP_200_OK)
+
+
+# --------------------
+# HOTEL VIEWS
+# --------------------
+
+class HotelListAPIView(APIView):
+    permission_classes = [AllowAny]
+    serializer_class = HotelSerializer
+
+    def get(self, request):
+        hotels = Hotel.objects.all()
+        serializer = HotelSerializer(hotels, many=True)
+        return Response(serializer.data)
+
+
+class HotelDetailAPIView(APIView):
+    permission_classes = [AllowAny]
+    serializer_class = HotelSerializer
+
+    def get(self, request, pk):
+        hotel = get_object_or_404(Hotel, pk=pk)
+        serializer = HotelSerializer(hotel)
+        return Response(serializer.data)
+
+
+# --------------------
+# ROOM TYPE VIEWS
+# --------------------
+
+class RoomTypeListAPIView(APIView):
+    permission_classes = [AllowAny]
+    serializer_class = RoomTypeSerializer
+
+    def get(self, request):
+        hotel_id = request.GET.get('hotel_id')
+        room_types = RoomType.objects.all()
+        
+        if hotel_id:
+            room_types = room_types.filter(hotel_id=hotel_id)
+        
+        serializer = RoomTypeSerializer(room_types, many=True)
+        return Response(serializer.data)
+
+
+# --------------------
+# ROOM VIEWS
+# --------------------
+
+class RoomListAPIView(APIView):
+    permission_classes = [AllowAny]
+    serializer_class = RoomSerializer
+
+    def get(self, request):
+        rooms = Room.objects.filter(is_active=True)
+        serializer = RoomSerializer(rooms, many=True)
+        return Response(serializer.data)
+
+
+class RoomDetailAPIView(APIView):
+    permission_classes = [AllowAny]
+    serializer_class = RoomSerializer
+
+    def get(self, request, pk):
+        room = get_object_or_404(Room, pk=pk, is_active=True)
+        serializer = RoomSerializer(room)
+        return Response(serializer.data)
+
+
+# --------------------
+# AVAILABILITY VIEW (New)
+# --------------------
+
+class AvailabilityAPIView(APIView):
+    permission_classes = [AllowAny]
+    serializer_class = AvailabilitySerializer
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(name='check_in', description='Check-in date (YYYY-MM-DD)', required=True, type=str),
+            OpenApiParameter(name='check_out', description='Check-out date (YYYY-MM-DD)', required=True, type=str),
+            OpenApiParameter(name='adults', description='Number of adults', required=False, type=int),
+            OpenApiParameter(name='children', description='Number of children', required=False, type=int),
+            OpenApiParameter(name='hotel_id', description='Filter by hotel', required=False, type=int),
+        ]
+    )
+    def get(self, request):
+        serializer = AvailabilitySerializer(data=request.GET)
+        serializer.is_valid(raise_exception=True)
+        
+        data = serializer.validated_data
+        check_in = data['check_in']
+        check_out = data['check_out']
+        adults = data.get('adults', 1)
+        children = data.get('children', 0)
+        hotel_id = data.get('hotel_id')
+        
+        total_guests = adults + children
+        
+        # Find conflicting bookings
+        conflicting_bookings = Booking.objects.filter(
+            Q(check_in_date__lt=check_out, check_out_date__gt=check_in),
+            status__in=['CONFIRMED', 'CHECKED_IN', 'PENDING']
+        ).values_list('room_id', flat=True)
+        
+        # Get available rooms
+        available_rooms = Room.objects.filter(
+            is_active=True,
+            status='AVAILABLE',
+            room_type__capacity__gte=total_guests
+        ).exclude(id__in=conflicting_bookings)
+        
+        if hotel_id:
+            available_rooms = available_rooms.filter(room_type__hotel_id=hotel_id)
+        
+        room_data = []
+        for room in available_rooms:
+            nights = (check_out - check_in).days
+            total_price = nights * room.price_per_night if nights > 0 else room.price_per_night
+            
+            room_data.append({
+                'room': RoomSerializer(room).data,
+                'room_type': RoomTypeSerializer(room.room_type).data,
+                'total_nights': nights,
+                'total_price': total_price
+            })
+        
+        return Response({
+            'check_in': check_in,
+            'check_out': check_out,
+            'total_guests': total_guests,
+            'available_rooms': room_data
+        })
+
+
+# --------------------
+# BOOKING VIEWS
+# --------------------
+
+class BookingListCreateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = BookingSerializer
+
+    def get(self, request):
+        if request.user.role in ['staff', 'admin']:
+            bookings = Booking.objects.all()
+        else:
+            bookings = Booking.objects.filter(user=request.user)
+        
+        serializer = BookingSerializer(bookings, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = BookingSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            booking = serializer.save()
+            return Response(BookingSerializer(booking).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class BookingDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = BookingSerializer
+
+    def get_object(self, pk):
+        booking = get_object_or_404(Booking, pk=pk)
+        if self.request.user.role not in ['staff', 'admin'] and booking.user != self.request.user:
+            raise PermissionDenied("You don't have permission to access this booking.")
+        return booking
+
+    def get(self, request, pk):
+        booking = self.get_object(pk)
+        serializer = BookingSerializer(booking)
+        return Response(serializer.data)
+
+    def put(self, request, pk):
+        booking = self.get_object(pk)
+        serializer = BookingSerializer(booking, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        booking = self.get_object(pk)
+        booking.status = 'CANCELLED'
+        booking.save()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class BookingConfirmAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = BookingSerializer
+
+    def post(self, request, pk):
+        booking = get_object_or_404(Booking, pk=pk)
+        if request.user.role not in ['staff', 'admin']:
+            return Response({"error": "Only staff can confirm bookings"}, status=status.HTTP_403_FORBIDDEN)
+        
+        booking.status = 'CONFIRMED'
+        booking.save()
+        return Response({'status': 'Booking confirmed'})
+
+
+# --------------------
+# PAYMENT VIEWS
+# --------------------
+
+class PaymentListCreateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = PaymentSerializer
+
+    def get(self, request):
+        if request.user.role in ['staff', 'admin']:
+            payments = Payment.objects.all()
+        else:
+            payments = Payment.objects.filter(booking__user=request.user)
+        
+        serializer = PaymentSerializer(payments, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = PaymentSerializer(data=request.data)
+        if serializer.is_valid():
+            payment = serializer.save()
+            
+            # If payment is completed, update booking status
+            if payment.status == 'COMPLETED':
+                payment.booking.status = 'CONFIRMED'
+                payment.booking.save()
+            
+            return Response(PaymentSerializer(payment).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# --------------------
+# REVIEW VIEWS
+# --------------------
+
+class ReviewListCreateAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = ReviewSerializer
+
+    def get(self, request):
+        hotel_id = request.GET.get('hotel_id')
+        reviews = Review.objects.filter(is_approved=True)
+        
+        if hotel_id:
+            reviews = reviews.filter(booking__room__room_type__hotel_id=hotel_id)
+        
+        serializer = ReviewSerializer(reviews, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = ReviewSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            review = serializer.save()
+            return Response(ReviewSerializer(review).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# --------------------
+# PROFILE VIEWS
+# --------------------
+
+class UserProfileAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = UserSerializer
+
+    def get(self, request):
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data)
+
+    def put(self, request):
+        serializer = UserSerializer(request.user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class MyBookingsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = BookingSerializer
+
+    def get(self, request):
+        bookings = Booking.objects.filter(user=request.user)
+        serializer = BookingSerializer(bookings, many=True)
+        return Response(serializer.data)
