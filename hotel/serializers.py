@@ -26,25 +26,52 @@ class UserSerializer(serializers.ModelSerializer):
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=6)
     password_confirm = serializers.CharField(write_only=True, min_length=6)
+    role = serializers.ChoiceField(
+        choices = CustomUser.ROLE_CHOICES,
+        required = False,
+        default = 'customer'
+    )
     
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'email', 'password', 'password_confirm', 'first_name', 'last_name', 'phone_number']
+        fields = ['id', 'username', 'email', 'password', 'password_confirm', 'first_name', 'last_name', 'phone_number', 'role']
     
     def validate(self, data):
         if data['password'] != data['password_confirm']:
             raise serializers.ValidationError("Passwords do not match.")
+        
+        # Role permission validation
+        request = self.context.get('request')
+        requested_role = data.get('role', 'customer')
+
+        if requested_role in ['staff', 'admin']:
+            if not request or not request.user.is_authenticated:
+                raise serializers.ValidationError(
+                    "Authentication required to create staff/admin accounts."
+                )
+            if request.user.role not in ['staff', 'admin']:
+                raise serializers.ValidationError(
+                    "Only staff or admin can create staff/admin accounts"
+                )
+            if requested_role == 'admin' and request.user.role != 'admin':
+                raise serializers.ValidationError(
+                    "Only admin users can create admin accounts."
+                )
+            
         return data
     
     def create(self, validated_data):
         validated_data.pop('password_confirm')
+        role = validated_data.pop('role', 'customer')
+
         user = CustomUser.objects.create_user(
             username=validated_data['username'],
             email=validated_data.get('email'),
             password=validated_data['password'],
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', ''),
-            phone_number=validated_data.get('phone_number', '')
+            phone_number=validated_data.get('phone_number', ''),
+            role = role
         )
         Token.objects.create(user=user)
         return user

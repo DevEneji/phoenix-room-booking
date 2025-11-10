@@ -1,7 +1,10 @@
 from django.urls import path
 from .views import (
     # Authentication
-    RegisterView,
+    PublicRegisterView,
+    StaffRegisterView,
+    AdminRegisterView,
+    UserManagementAPIView,
     LoginView,
     
     # Hotel & Rooms
@@ -30,7 +33,16 @@ from .views import (
 
 urlpatterns = [
     # Authentication
-    path('auth/register/', RegisterView.as_view(), name='register'),
+    # Registration endpoints
+    path('auth/register/', PublicRegisterView.as_view(), name='register-public'),  # Customers only
+    path('auth/register/staff/', StaffRegisterView.as_view(), name='register-staff'),
+    path('auth/register/admin/', AdminRegisterView.as_view(), name='register-admin'),
+    
+    # User management
+    path('admin/users/', UserManagementAPIView.as_view(), name='user-management'),
+    path('admin/users/<int:pk>/', UserManagementAPIView.as_view(), name='user-detail'),
+
+    # Login endpoint
     path('auth/login/', LoginView.as_view(), name='login'),
     
     # Hotels

@@ -37,21 +37,182 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExampl
 # AUTHENTICATION VIEWS
 # --------------------
 
-class RegisterView(APIView):
-    serializer_class = RegisterSerializer
+class PublicRegisterView(APIView):
+    """Public registration - customers only"""
     permission_classes = [AllowAny]
+    serializer_class = RegisterSerializer
 
     def post(self, request):
-        serializer = RegisterSerializer(data=request.data)
+        # Force role to 'customer' for public registration
+        data = request.data.copy()
+        data['role'] = 'customer'
+
+        serializer = RegisterSerializer(data = data, context = {'request': request})
         if serializer.is_valid():
             user = serializer.save()
-            token, _ = Token.objects.get_or_create(user=user)
             return Response({
                 "user": UserSerializer(user).data,
-                "token": token.key
-            }, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                "token": Token.objects.get(user = user).key
+            }, status = status.HTTP_201_CREATED)
+        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
+    
+class StaffRegisterView(APIView):
+    """Staff registration - requires staff/admin permissions"""
+    permission_classes = [IsAuthenticated] # Staff or admin can access
+    serializer_class = RegisterSerializer
 
+    def post(self, request):
+        if request.user.role not in ['staff', 'admin']:
+            return Response(
+                {"error": "Only staff or admin can register staff accounts."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Force role to 'staff'
+        data = request.data.copy()
+        data['role'] = 'staff'
+
+        serializer = RegisterSerializer(data = data, context = {'request': request})
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response({
+                "user": UserSerializer(user).data,
+                "message": "Staff account created successfully"
+            }, status = status.HTTP_201_CREATED)
+        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
+    
+class AdminRegisterView(APIView):
+    """Admin registration - requires admin permissions only"""
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    serializer_class = RegisterSerializer
+
+    def post(self, request):
+        # Force role to 'admin'
+        data = request.data.copy()
+        data['role'] = 'admin'
+
+        serializer = RegisterSerializer(data = data, context = {'request': request})
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response({
+                "user": UserSerializer(user).data,
+                "message": "Admin account created successfully"
+            }, status = status.HTTP_201_CREATED)
+        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
+
+class UserManagementAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = UserSerializer
+
+    def check_permissions(self, request):
+        """Override to check for admin/staff permissions based on action"""
+        super().check_permissions(request)
+
+        # For listing and creating users, require staff / admin
+        if request.method in ['GET', 'POST'] and request.user.role not in ['staff', 'admin']:
+            self.permission_denied(
+                request,
+                message = 'Only staff or admin can access user management.'
+            )
+
+        # For updating/deleting, require admin only for role changes
+        if request.method in ['PUT', 'PATCH', 'DELETE']:
+            if 'role' in request.data and request.user.role != 'admin':
+                self.permission_denied(
+                    request,
+                    message = "Only admin can change user roles"
+                )
+
+    def get(self, request):
+        """List all users (staff/admin only)"""
+        users = CustomUser.objects.all()
+
+        # Filter by role if provided
+        role_filter = request.GET.get('role')
+        if role_filter:
+            users = users.filter(role = role_filter)
+
+        serializer = UserSerializer(users, many = True)
+        return Response(serializer.data)
+    
+    def post(self, request):
+        """Create new user with any role (staff/admin only)"""
+        serializer = RegisterSerializer(data = request.data, context = {'request': request})
+
+        if serializer.is_valid():
+            user = serializer.save()
+            return Response(UserSerializer(user).data, status = status.HTTP_201_CREATED)
+        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
+    
+    def get_object(self, pk):
+        user = get_object_or_404(CustomUser, pk = pk)
+
+        # User can view their own profile, but need permissions for others
+        if self.request.user.pk != user.pk and self.request.user.role not in ['staff', 'admin']:
+            raise PermissionDenied("You can only view your own profile.")
+
+        return user
+    
+    def get(self, request, pk = None):
+        """Get specific user profile"""
+        if pk:
+            user = self.get_object(pk)
+            serializer = UserSerializer(user)
+            return Response(serializer.data)
+        else:
+            # List all users (handled by the get method without pk)
+            return self.get(request)
+        
+    def patch(self, request, pk = None):
+        """Update user profile or role"""
+        if not pk:
+            return Response({"error": "User ID required"}, status = status.HTTP_400_BAD_REQUEST)
+        user = self.get_object(pk)
+
+        # Users can only update their own profile unless they're staff/adminn
+        if request.user.pk != user.pk and request.user.role not in ['staff', 'admin']:
+            return Response(
+                {"error": "You can only update your own profile."},
+                status = status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = UserSerializer(user, data = request.data, partial = True)
+        if serializer.is_valid():
+            # Check if trying to change role
+            if 'role' in request.data and request.user.role != 'admin':
+                return Response(
+                    {"error": "Only admin can change user roles"},
+                    status = status.HTTP_403_FORBIDDEN
+                )
+            
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status = status.HTTP_400_BAD_REQUEST)
+    
+    def delete(self, request, pk = None):
+        """Delete user (admin only)"""
+        if not pk:
+            return Response({"error": "User ID required"}, status = status.HTTP_400_BAD_REQUEST)
+        
+        if request.user.role != 'admin':
+            return Response(
+                {"error": "Only admin can delete users."},
+                status = status.HTTP_403_FORBIDDEN
+            )
+        
+        user = get_object_or_404(CustomUser, pk = pk)
+
+        # Prevent self-deletion
+        if user.pk == request.user.pk:
+            return Response(
+                {"error": "You cannot delete your own account."},
+                status = status.HTTP_400_BAD_REQUEST
+            )
+        user.delete()
+        return Response(
+            {"message": "User deleted successfully."},
+            status = status.HTTP_204_NO_CONTENT
+        )
 
 class LoginView(APIView):
     serializer_class = LoginSerializer
