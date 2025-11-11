@@ -6,6 +6,8 @@ from .views import (
     AdminRegisterView,
     UserManagementAPIView,
     LoginView,
+    VerifyEmailView,
+    ResendOTPView,
     
     # Hotel & Rooms
     HotelListAPIView,
@@ -37,6 +39,10 @@ urlpatterns = [
     path('auth/register/', PublicRegisterView.as_view(), name='register-public'),  # Customers only
     path('auth/register/staff/', StaffRegisterView.as_view(), name='register-staff'),
     path('auth/register/admin/', AdminRegisterView.as_view(), name='register-admin'),
+
+    # Email Verification
+    path('auth/verify-email/', VerifyEmailView.as_view(), name='verify-email'),
+    path('auth/resend-otp/', ResendOTPView.as_view(), name='resend-otp'),
     
     # User management
     path('admin/users/', UserManagementAPIView.as_view(), name='user-management'),

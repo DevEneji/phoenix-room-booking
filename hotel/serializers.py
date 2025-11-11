@@ -44,6 +44,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         requested_role = data.get('role', 'customer')
 
+        # Staff can create customers and other staff
         if requested_role in ['staff', 'admin']:
             if not request or not request.user.is_authenticated:
                 raise serializers.ValidationError(
@@ -73,8 +74,19 @@ class RegisterSerializer(serializers.ModelSerializer):
             phone_number=validated_data.get('phone_number', ''),
             role = role
         )
+
+        # Send OTP for email verification
+        user.send_verification_email()
+
         Token.objects.create(user=user)
         return user
+    
+class OTPVerificationSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    otp = serializers.CharField(max_length = 6)
+
+class ResendOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField()
 
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField(

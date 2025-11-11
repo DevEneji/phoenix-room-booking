@@ -1,3 +1,7 @@
+from datetime import timezone
+import random
+from django.core.mail import send_mail
+from django.conf import settings
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import MinValueValidator, MaxValueValidator
@@ -19,9 +23,56 @@ class CustomUser(AbstractUser):
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     date_of_birth = models.DateField(blank=True, null=True)
     address = models.TextField(blank=True)
+    is_email_verified = models.BooleanField(default = False)
+    email_verification_otp = models.CharField(max_length = 6, blank = True, null = True)
+    otp_created_at = models.DateTimeField(blank = True, null = True)
     
     def __str__(self):
         return f"{self.get_full_name()} ({self.role})"
+    
+    def generate_otp(self):
+        """Generate a 6-digit OTP and set expiration time"""
+        self.email_verification_otp = str(random.randint(100000, 999999))
+        self.otp_created_at = timezone.now()
+        self.save()
+        return self.email_verification_otp
+    
+    def send_verification_email(self):
+        """Send OTP verification email"""
+        otp = self.generate_otp()
+        subject = 'Verify Your Email - Phoenix Hotel'
+        message = f'''
+        Hello {self.get_full_name() or self.username},
+
+        Your email verification OTP is: {otp}
+
+        This OTP will expire in 10 minutes.
+
+        If you didn't request this, please ignore this email.
+
+        Best regards,
+        Phoenix Hotel Team
+        '''
+
+        send_mail(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            [self.email],
+            fail_silently=False
+        )
+
+    def verify_otp(self, otp):
+        """Verify OTP and mark email as verified"""
+        if (self.email_verification_otp == otp and
+            self.otp_created_at and
+            timezone.now() < self.otp_created_at + timezone.timedelta(minutes = 10)):
+            self.is_email_verified = True
+            self.email_verification_otp = None
+            self.otp_created_at = None
+            self.save()
+            return True
+        return False
 
 
 # --------------------
