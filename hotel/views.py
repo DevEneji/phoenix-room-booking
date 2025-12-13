@@ -177,7 +177,7 @@ class UserManagementAPIView(APIView):
             if user_role != 'admin':
                 self.permission_denied(request, message = "Only admin can delete users.")
 
-    def get_query(self):
+    def get_queryset(self):
         """Filter queryset based on user role"""
         user = self.request.user
 

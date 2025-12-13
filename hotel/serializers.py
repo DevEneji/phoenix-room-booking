@@ -1,7 +1,6 @@
 # Serializers convert model data into JSON and validate API input.
 
 from rest_framework import serializers
-from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from django.utils.translation import gettext as _
